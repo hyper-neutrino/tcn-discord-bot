@@ -1,41 +1,27 @@
 import client from "../client.js";
-import db from "../db.js";
+import { db } from "../db.js";
 
-export async function set_setting(setting, value) {
-    await db.query(
-        `insert into settings values ($1, $2) on conflict (setting) do update set value = $2`,
-        [setting, value]
+export async function get_setting(key) {
+    const entry = await db.settings.findOne({ key });
+    return entry && entry.value;
+}
+
+export async function get_setting_channel(key) {
+    try {
+        return await client.channels.fetch(await get_setting(key));
+    } catch {}
+}
+
+export async function get_setting_role(key) {
+    try {
+        return await client.home.roles.fetch(await get_setting(key));
+    } catch {}
+}
+
+export async function set_setting(key, value) {
+    await db.settings.findOneAndUpdate(
+        { key },
+        { $set: { value } },
+        { upsert: true }
     );
-}
-
-export async function get_setting(setting) {
-    const results = await db.query(
-        `select value from settings where setting = $1`,
-        [setting]
-    );
-    return results.rows.length > 0 ? results.rows[0].value : undefined;
-}
-
-export async function get_setting_member(setting) {
-    try {
-        const value = await get_setting(setting);
-        if (!value) return;
-        return await client.home.members.fetch(value);
-    } catch {}
-}
-
-export async function get_setting_role(setting) {
-    try {
-        const value = await get_setting(setting);
-        if (!value) return;
-        return await client.home.roles.fetch(value);
-    } catch {}
-}
-
-export async function get_setting_channel(setting) {
-    try {
-        const value = await get_setting(setting);
-        if (!value) return;
-        return await client.home.channels.fetch(value);
-    } catch {}
 }

@@ -13,3 +13,7 @@ export function expand(item) {
         return item.toString();
     }
 }
+
+export function timestamp(time, flag) {
+    return `<t:${Math.floor(time.getTime() / 1000)}${flag ? `:${flag}` : ""}>`;
+}

@@ -1,11 +1,27 @@
+import { Role } from "discord.js";
 import client from "../client.js";
 import {
-    add_permission,
-    list_permissions_by_snowflake,
-    list_snowflakes_by_permission,
-    remove_permission,
+    deny_permission,
+    get_permissions,
+    grant_permission,
+    reset_permission,
 } from "../db/permissions.js";
 import { expand } from "../format.js";
+import { double } from "../utils.js";
+
+const key = {
+    name: "key",
+    description: "the permission",
+    type: "STRING",
+    required: true,
+};
+
+const target = {
+    name: "target",
+    description: "the user or role",
+    type: "MENTIONABLE",
+    required: true,
+};
 
 export const command = {
     name: "permission",
@@ -14,117 +30,62 @@ export const command = {
     options: [
         {
             name: "grant",
-            description: "Grant permission to a role/user.",
+            description: "Grant a permission to a user or role.",
             type: "SUB_COMMAND",
-            options: [
-                {
-                    name: "permission",
-                    description: "the permission to grant",
-                    type: "STRING",
-                    required: true,
-                },
-                {
-                    name: "target",
-                    description: "the target to grant permission to",
-                    type: "MENTIONABLE",
-                    required: true,
-                },
-            ],
+            options: [key, target],
         },
         {
             name: "deny",
-            description: "Remove a permission from a role/user.",
+            description: "Remove a permission from a user or role.",
             type: "SUB_COMMAND",
-            options: [
-                {
-                    name: "permission",
-                    description: "the permission to remove",
-                    type: "STRING",
-                    required: true,
-                },
-                {
-                    name: "target",
-                    description: "the target to remove permissions from",
-                    type: "MENTIONABLE",
-                    required: true,
-                },
-            ],
+            options: [key, target],
         },
         {
-            name: "list",
-            description: "List the roles and users who have a permission.",
+            name: "reset",
+            description:
+                "Reset users and roles for a permission (remove from all).",
             type: "SUB_COMMAND",
-            options: [
-                {
-                    name: "permission",
-                    description: "the permission to show",
-                    type: "STRING",
-                    required: true,
-                },
-            ],
+            options: [key],
         },
         {
-            name: "get",
-            description: "Get the permissions for a role/user.",
+            name: "show",
+            description:
+                "Show the users and roles that have access to a permission.",
             type: "SUB_COMMAND",
-            options: [
-                {
-                    name: "target",
-                    description: "the target to show permissions for",
-                    type: "MENTIONABLE",
-                    required: true,
-                },
-            ],
+            options: [key],
         },
     ],
 };
 
-export async function execute(interaction) {
-    const sub = interaction.options.getSubcommand(true);
-    const permission = interaction.options.getString(
-        "permission",
-        sub == "grant" || sub == "deny" || sub == "list"
-    );
-    const target = interaction.options.getMentionable(
-        "target",
-        sub == "grant" || sub == "deny" || sub == "get"
-    );
+export async function execute(interaction, { sub, key, target }) {
     if (sub == "grant") {
-        await add_permission(permission, target.id);
-        return [
-            `Granted permission \`${permission}\` to ${target}.`,
-            `Granted permission \`${permission}\` to ${expand(target)}`,
-        ];
+        await grant_permission(key, target.id);
+        return double(`Granted permission \`${key}\` to ${expand(target)}.`);
     } else if (sub == "deny") {
-        await remove_permission(permission, target.id);
-        return [
-            `Removed permission \`${permission}\` from ${target}.`,
-            `Removed permission \`${permission}\` from ${expand(target)}`,
-        ];
-    } else if (sub == "list") {
-        const results = [];
-        for (const id of await list_snowflakes_by_permission(permission)) {
+        await deny_permission(key, target.id);
+        return double(`Denied permission \`${key}\` from ${expand(target)}.`);
+    } else if (sub == "reset") {
+        await reset_permission(key);
+        return double(
+            `Reset permission \`${key}\` denying it from all users and roles.`
+        );
+    } else if (sub == "show") {
+        const users = [];
+        const roles = [];
+        for (const snowflake of await get_permissions(key)) {
             try {
-                const user = await client.users.fetch(id);
-                if (!user) throw 0;
-                results.push(user);
+                users.push(await client.users.fetch(snowflake));
                 continue;
             } catch {}
             try {
-                const role = await client.home.roles.fetch(id);
-                if (!role) throw 0;
-                results.push(role);
+                const role = await client.home.roles.fetch(snowflake);
+                if (!(role instanceof Role)) throw 0;
+                roles.push(role);
                 continue;
             } catch {}
         }
-        return (
-            results.map((result) => result.toString()).join(", ") || "(none)"
-        );
-    } else if (sub == "get") {
-        return (
-            (await list_permissions_by_snowflake(target.id))
-                .map((key) => `\`${key}\``)
-                .join(", ") || "(none)"
-        );
+        return `**Access for permission \`${key}\`:**\n\nUsers: ${
+            users.map(expand).join(", ") || "(none)"
+        }\n\nRoles: ${roles.map(expand).join(", ") || "(none)"}`;
     }
 }

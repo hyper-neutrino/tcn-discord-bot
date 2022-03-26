@@ -1,19 +1,30 @@
-import client from "../client.js";
 import {
-    close_poll,
     create_poll,
-    get_expired_polls,
     get_poll,
-    get_poll_options,
-    set_poll_date,
+    get_polls,
+    set_poll_deadline,
     set_poll_message,
-    set_poll_options,
+    set_poll_open,
 } from "../db/polls.js";
-import { get_setting_channel } from "../db/settings.js";
-import { expand } from "../format.js";
+import { expand, timestamp } from "../format.js";
 import { post_modal } from "../modals.js";
-import { poll_embed } from "../polls.js";
-import { alphabet_emojis, double, month_names } from "../utils.js";
+import { close_poll, get_poll_message, show_poll } from "../polls.js";
+import { double } from "../utils.js";
+
+const id = {
+    name: "id",
+    description:
+        "the poll ID (must be unique across all polls, ≤ 16 chars, no periods)",
+    type: "STRING",
+    required: true,
+};
+
+const duration = {
+    name: "duration",
+    description: "the number of hours for which to keep the poll open",
+    type: "NUMBER",
+    required: true,
+};
 
 export const command = {
     name: "poll",
@@ -22,20 +33,24 @@ export const command = {
     options: [
         {
             name: "create",
-            description: "Create a poll (does not post it).",
+            description: "Create a poll.",
             type: "SUB_COMMAND",
             options: [
+                id,
                 {
-                    name: "question",
-                    description: "briefly explain what the poll is about",
+                    name: "type",
+                    description: "the poll type",
                     type: "STRING",
                     required: true,
+                    choices: ["proposal", "select", "ranked"].map((option) => ({
+                        name: option,
+                        value: option,
+                    })),
                 },
                 {
-                    name: "short",
-                    description:
-                        "whether or not the poll is short-form (if so, the options are yes/abstain/no)",
-                    type: "BOOLEAN",
+                    name: "question",
+                    description: "the poll question",
+                    type: "STRING",
                     required: true,
                 },
                 {
@@ -46,15 +61,31 @@ export const command = {
                     required: true,
                 },
                 {
+                    name: "quorum",
+                    description:
+                        "the threshold of voters that must vote for this poll to be valid",
+                    type: "INTEGER",
+                    required: true,
+                    minValue: 0,
+                    maxValue: 100,
+                },
+                {
+                    name: "hide",
+                    description:
+                        "whether or not to hide the poll results until it closes",
+                    type: "BOOLEAN",
+                    required: true,
+                },
+                {
                     name: "anonymous",
                     description: "whether or not the poll should be anonymous",
                     type: "BOOLEAN",
                     required: true,
                 },
                 {
-                    name: "update",
+                    name: "mandatory",
                     description:
-                        "whether or not the poll's current results should be updated in real-time",
+                        "set this to TRUE to track voting (for voting mandates)",
                     type: "BOOLEAN",
                     required: true,
                 },
@@ -62,83 +93,51 @@ export const command = {
         },
         {
             name: "post",
-            description: "Post a poll.",
+            description: "Post a poll in the current channel.",
             type: "SUB_COMMAND",
-            options: [
-                {
-                    name: "id",
-                    description: "the poll id",
-                    type: "INTEGER",
-                    required: true,
-                    minValue: 1,
-                },
-                {
-                    name: "end_year",
-                    description: "the year of the end date (UTC)",
-                    type: "INTEGER",
-                    required: true,
-                    minValue: 1,
-                },
-                {
-                    name: "end_month",
-                    description: "the month of the end date (UTC)",
-                    type: "STRING",
-                    required: true,
-                    choices: month_names.map((month) => ({
-                        name: month,
-                        value: month,
-                    })),
-                },
-                {
-                    name: "end_date",
-                    description: "the end date (UTC)",
-                    type: "INTEGER",
-                    required: true,
-                    minValue: 1,
-                    maxValue: 31,
-                },
-                {
-                    name: "end_hour",
-                    description: "the hour of the end date (UTC - 24h time)",
-                    type: "INTEGER",
-                    required: true,
-                    minValue: 0,
-                    maxValue: 23,
-                },
-                {
-                    name: "end_minute",
-                    description: "the minute of the end date (UTC)",
-                    type: "INTEGER",
-                    required: true,
-                    minValue: 0,
-                    maxValue: 59,
-                },
-            ],
+            options: [{ ...id, autocomplete: true }, duration],
+        },
+        {
+            name: "close",
+            description: "Close a poll immediately.",
+            type: "SUB_COMMAND",
+            options: [{ ...id, autocomplete: true }],
         },
     ],
 };
 
-export async function execute(interaction) {
-    const sub = interaction.options.getSubcommand();
+export async function execute(
+    interaction,
+    {
+        sub,
+        id,
+        type,
+        question,
+        restrict,
+        quorum,
+        hide,
+        anonymous,
+        mandatory,
+        duration,
+    }
+) {
+    if (id.length > 16) return "ID cannot exceed 16 characters.";
+    if (id.match("\\.")) return "ID cannot contain periods.";
     if (sub == "create") {
-        const question = interaction.options.getString("question", true);
-        const short = interaction.options.getBoolean("short", true);
-        const restrict = interaction.options.getBoolean("restrict", true);
-        const anonymous = interaction.options.getBoolean("anonymous", true);
-        const update = interaction.options.getBoolean("update", true);
-        const id = await create_poll(
+        if (await get_poll(id)) {
+            return "This poll ID is already in use.";
+        }
+        const poll = {
+            id,
+            type,
             question,
-            short,
             restrict,
+            quorum,
+            hide,
             anonymous,
-            update
-        );
-        const success = `Poll created with id \`${id}\`.`;
-        if (short) {
-            await set_poll_options(id, ["👍", "🤐", "👎"]);
-            await interaction.reply({ embeds: [{ description: success }] });
-            await interaction.log(success);
-        } else {
+            mandatory,
+        };
+        if (type == "select" || type == "ranked") {
             const modal = await post_modal(interaction, {
                 title: "Poll Options",
                 components: [
@@ -148,144 +147,73 @@ export async function execute(interaction) {
                             {
                                 type: 4,
                                 style: 2,
-                                custom_id: "poll_options",
-                                label: "Enter poll options line-by-line.",
-                                placeholder:
-                                    "option 1\noption 2\nmax 256 chars each\nmax 20 options",
+                                custom_id: "options",
+                                label: "Enter poll options line-by-line",
+                                placeholder: "≤ 25 options, ≤ 100 chars each",
                             },
                         ],
                     },
                 ],
             });
             const options = modal.data.components[0].components[0].value
-                .trim()
                 .split("\n")
-                .map((line) => line.trim())
-                .filter((line) => line);
-            if (options.length == 0) {
-                await modal.respond({
+                .map((x) => x.trim())
+                .filter((x) => x);
+            if (options.length <= 0) {
+                return await modal.respond({
                     flags: 64,
-                    content: "You need to specify at least one option.",
+                    content: "You must specify at least one option.",
                 });
-                return;
-            } else if (options.length > 20) {
-                await modal.respond({
+            } else if (options.length > 25) {
+                return await modal.respond({
                     flags: 64,
-                    content: "There can only be up to 20 options.",
+                    content: "You must not specify more than 25 options.",
                 });
-            } else if (options.some((option) => option.length > 256)) {
-                await modal.respond({
+            } else if (options.some((x) => x.length > 100)) {
+                return await modal.respond({
                     flags: 64,
-                    content: "Options can only be at most 256 characters long.",
+                    content: "Options must not be longer than 100 characters.",
                 });
-                return;
-            } else {
-                await set_poll_options(id, options);
-                await modal.respond({ embeds: [{ description: success }] });
-                await interaction.log(`Poll created with id \`${id}\`.`);
             }
+            poll.options = options;
+            await create_poll(poll);
+            await modal.respond({
+                flags: 64,
+                content: `Created poll with ID \`${id}\`.`,
+            });
+            await interaction.log(`Created poll with ID \`${id}\`.`);
+        } else {
+            await create_poll(poll);
+            return double(`Created poll with ID \`${id}\`.`);
         }
     } else if (sub == "post") {
-        const id = interaction.options.getInteger("id", true);
         const poll = await get_poll(id);
-        if (!poll) return "Poll not found.";
-        if (poll.posted) return "Poll already posted.";
-
-        const year = interaction.options.getInteger("end_year", true);
-        const month = month_names.indexOf(
-            interaction.options.getString("end_month", true)
-        );
-        const date = interaction.options.getInteger("end_date", true);
-        const hour = interaction.options.getInteger("end_hour", true);
-        const minute = interaction.options.getInteger("end_minute", true);
-        if (
-            date >
-            (month == 1
-                ? year % 4 == 0 && (year % 100 != 0 || year % 400 == 0)
-                    ? 29
-                    : 28
-                : month == 3 || month == 5 || month == 8 || month == 10
-                ? 30
-                : 31)
-        ) {
-            return "That date is invalid for the given month and year.";
-        }
-        const time = new Date(year, month, date, hour, minute);
-        if (time < new Date()) {
-            return "That date is invalid as it is in the past.";
-        }
-
-        const polls = await get_setting_channel("polls");
-        if (!polls) return "The polls channel is not configured.";
-
-        await set_poll_date(id, time);
-
-        const components = [];
-        const options = await get_poll_options(id);
-        while (options.length > 0) {
-            components.push({
-                type: "ACTION_ROW",
-                components: options.splice(0, 5).map((option) => ({
-                    type: "BUTTON",
-                    style: "SECONDARY",
-                    custom_id: `poll.${poll.id}.${option.id}`,
-                    emoji: poll.short
-                        ? option.value
-                        : alphabet_emojis[option.index],
-                })),
-            });
-        }
-        components.push({
-            type: "ACTION_ROW",
-            components: [
-                {
-                    type: "BUTTON",
-                    style: "SECONDARY",
-                    custom_id: `poll_votes.${poll.id}`,
-                    emoji: "🗳️",
-                    label: "see votes",
-                    disabled: poll.anonymous || !poll.update,
-                },
-            ].flat(),
-        });
-
-        const message = await polls.send({
-            embeds: [await poll_embed(id)],
-            components,
-        });
-
+        if (!poll) return "There is no poll by that ID.";
+        if (await get_poll_message(poll)) return "This poll is already posted.";
+        poll.closed = false;
+        const message = await interaction.channel.send(await show_poll(poll));
+        const time = new Date();
+        time.setSeconds(time.getSeconds() + duration * 3600);
         await set_poll_message(id, message);
-
-        return [
-            `Posted to ${polls}.`,
-            `Posted poll #${id} to ${expand(polls)}.`,
-        ];
+        await set_poll_deadline(id, time);
+        await set_poll_open(id);
+        return double(
+            `Posted poll \`${id}\` in ${expand(
+                interaction.channel
+            )} closing ${timestamp(time)}`
+        );
+    } else if (sub == "close") {
+        const poll = await get_poll(id);
+        if (!poll) return "There is no poll by that ID.";
+        if (poll.closed) return "This poll is already closed.";
+        close_poll(poll);
+        return double(`Manually closed poll \`${id}\`.`);
     }
 }
 
-setInterval(async () => {
-    for (const poll of await get_expired_polls()) {
-        try {
-            const channel = await client.channels.fetch(poll.channel_id);
-            const message = await channel.messages.fetch(poll.message_id);
-            await message.edit({
-                embeds: [await poll_embed(poll.id, true)],
-                components: [
-                    {
-                        type: "ACTION_ROW",
-                        components: message.components[
-                            message.components.length - 1
-                        ].components.map(
-                            (component) => (
-                                (component.disabled = poll.anonymous), component
-                            )
-                        ),
-                    },
-                ],
-            });
-            await close_poll(poll.id);
-        } catch (error) {
-            console.log(error);
-        }
-    }
-}, 10000);
+export async function autocomplete(interaction) {
+    const query = interaction.options.getFocused();
+    return (await get_polls())
+        .map((poll) => poll.id)
+        .filter((x) => x.match(query));
+}

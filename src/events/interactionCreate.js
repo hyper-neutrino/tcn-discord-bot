@@ -1,90 +1,174 @@
-import client from "../client.js";
-import {
-    get_poll,
-    get_poll_options,
-    get_poll_votes,
-    set_poll_vote,
-} from "../db/polls.js";
-import { get_setting_role } from "../db/settings.js";
-import { poll_embed } from "../polls.js";
+import { get_poll, get_poll_vote, set_poll_vote } from "../db/polls.js";
+import { post_modal } from "../modals.js";
+import { close_poll, is_voter, update_poll } from "../polls.js";
 
 export async function handle(interaction) {
-    await check_poll(interaction);
-    await check_poll_votes(interaction);
-}
-
-async function check_poll(interaction) {
-    if (!interaction.isButton()) return;
-    if (!interaction.customId.startsWith("poll.")) return;
-    const [poll_id, option_id] = interaction.customId
-        .substring(5)
-        .split(".")
-        .map((id) => parseInt(id));
-    const poll = await get_poll(poll_id);
-    if (poll.restrict) {
-        const voter = await get_setting_role("voter");
-        if (!voter) {
-            await interaction.notify(
-                "You must have the voter role, which is not configured."
-            );
-            return;
-        }
-        if (!interaction.member.roles.cache.has(voter.id)) {
-            await interaction.notify(`You must have the ${voter} role.`);
-            return;
-        }
-    }
-    const response = await set_poll_vote(
-        poll_id,
-        interaction.user.id,
-        option_id
-    );
-    if (!response) {
-        await interaction.notify("Your vote has been cleared.");
-    } else {
-        await interaction.notify(`Your vote has been set to: ${response}.`);
-    }
-    if (!poll.update) return;
-    const channel = await client.channels.fetch(poll.channel_id);
-    const message = await channel.messages.fetch(poll.message_id);
-    await message.edit({ embeds: [await poll_embed(poll_id)] });
-}
-
-async function check_poll_votes(interaction) {
-    if (!interaction.isButton()) return;
-    if (!interaction.customId.startsWith("poll_votes.")) return;
-    const poll_id = parseInt(interaction.customId.substring(11));
-    const poll = await get_poll(poll_id);
-    if (poll.anonymous) {
-        await interaction.notify("This poll is anonymous.");
-    } else if (!poll.update && !poll.closed) {
-        await interaction.notify(
-            "This poll's votes cannot be viewed until after the poll is over."
-        );
-    } else {
-        const options = await get_poll_options(poll_id);
-        const voters = new Map();
-        for (const option of options) {
-            voters.set(option.id, []);
-        }
-        for (const vote of await get_poll_votes(poll_id)) {
-            var string;
-            try {
-                string = (await client.users.fetch(vote.user_id)).tag;
-            } catch {
-                string = `[${vote.user_id}]`;
+    const user_id = interaction.user.id;
+    if (interaction.isButton() || interaction.isSelectMenu()) {
+        const args = interaction.customId.split(".");
+        if (args[0] == "poll") {
+            const id = args[1];
+            const sub = args[2];
+            const result = await handle_poll(interaction, id, sub);
+            if (
+                sub == "vote-yes" ||
+                sub == "vote-no" ||
+                sub == "vote" ||
+                sub == "rank" ||
+                sub == "abstain"
+            ) {
+                update_poll(interaction.message, args[1]);
             }
-            voters.get(vote.option_id).push(string);
+            return result;
         }
-        await interaction.notify(
-            options
+    }
+}
+
+async function handle_poll(interaction, id, sub) {
+    const poll = await get_poll(id);
+    if (!poll) return "This poll appears not to exist anymore.";
+    if (
+        (sub == "vote-yes" || sub == "vote-no" || sub == "abstain") &&
+        !(await is_voter(interaction.member))
+    ) {
+        return "This poll is restricted to voters.";
+    }
+    const user_id = interaction.user.id;
+    if (sub == "vote-yes") {
+        if (poll.closed) {
+            close_poll(poll);
+            return "This poll is now closed.";
+        }
+        await set_poll_vote(id, user_id, "yes");
+        return "Your vote has been set to IN FAVOR of the proposition.";
+    } else if (sub == "vote-no") {
+        if (poll.closed) {
+            close_poll(poll);
+            return "This poll is now closed.";
+        }
+        await set_poll_vote(id, user_id, "no");
+        return "Your vote has been set to IN OPPOSITION to the proposition.";
+    } else if (sub == "vote") {
+        if (interaction.values.length != 1) {
+            return "Poll selection count was invalid. This should probably not happen.";
+        }
+        const value = interaction.values[0];
+        await set_poll_vote(id, user_id, value);
+        return `Your vote has been set to \`${value}\`.`;
+    } else if (sub == "rank") {
+        const ranks = new Map();
+        const ballot = (poll.votes || {})[user_id];
+        if (ballot && ballot != -1) {
+            ballot.forEach((key, index) => ranks.set(key, index + 1));
+        }
+        const modal = await post_modal(interaction, {
+            title: "Ranked Vote",
+            components: [
+                {
+                    type: 1,
+                    components: [
+                        {
+                            type: 4,
+                            style: 2,
+                            custom_id: "ranks",
+                            label: `1 = BEST, ${poll.options.length} = WORST`,
+                            value: poll.options
+                                .map((key) => `${key}: ${ranks.get(key) || ""}`)
+                                .join("\n"),
+                        },
+                    ],
+                },
+            ],
+        });
+        const response = modal.data.components[0].components[0].value;
+        const taken = new Set();
+        const values = [];
+        try {
+            for (const line of response.split("\n")) {
+                const trimmed = line.trim();
+                if (!trimmed) continue;
+                const [key, value] = trimmed.split(":");
+                if (poll.options.indexOf(key) == -1) {
+                    throw `Error: ${key} is not one of the options.`;
+                } else if (!value) {
+                    throw `Error: You did not rank ${key}.`;
+                }
+                const rank = parseInt(value) - 1;
+                if (isNaN(rank)) {
+                    throw `Error: I do not understand what ${value} is supposed to mean as a ranking.`;
+                } else if (rank < 0) {
+                    throw `Error: You cannot give non-positive ranks.`;
+                } else if (rank >= poll.options.length) {
+                    throw `Error: ${value} is out of range (1..${poll.options.length})`;
+                } else if (values[rank]) {
+                    throw `Error: You ranked two objects #${value}.`;
+                } else if (taken.has(key)) {
+                    throw `Error: You ranked \`${key}\` twice.`;
+                } else {
+                    values[rank] = key;
+                }
+            }
+            await set_poll_vote(poll.id, user_id, values);
+            throw `Your vote has been set to \`${values.join(" > ")}\`.`;
+        } catch (message) {
+            await modal.respond({
+                flags: 64,
+                content: message,
+            });
+        }
+    } else if (sub == "view") {
+        const vote = await get_poll_vote(id, user_id);
+        if (!vote) {
+            return "You have not voted yet.";
+        } else if (vote == -1) {
+            return "You have chosen to abstain.";
+        } else {
+            return `Your vote is currently \`${[vote].flat().join(" > ")}\`.`;
+        }
+    } else if (sub == "votes") {
+        return (
+            Object.keys(poll.votes || {})
                 .map(
-                    (option) =>
-                        `**__${option.value}__**\n${
-                            voters.get(option.id).join(", ") || "(none)"
-                        }`
+                    (key) =>
+                        `<@${key}>: \`${
+                            poll.votes[key] == -1
+                                ? "ABSTAINED"
+                                : [poll.votes[key]].flat().join(" > ")
+                        }\``
                 )
-                .join("\n\n")
+                .join("\n") || "(nobody has voted yet)"
         );
+    } else if (sub == "abstain") {
+        await set_poll_vote(id, user_id, -1);
+        return "Your vote has been set to ABSTAIN.";
+    } else if (sub == "info") {
+        return `**POLL** \`${poll.id}\`:\n${
+            {
+                proposal:
+                    "This is a **proposal** poll. You can vote in favor or against.",
+                select: "This is a **select** poll. You can choose one of several options.",
+                ranked: "This is a **ranked** poll. You must rank all options from best to worst.",
+            }[poll.type]
+        }\n\n__${poll.question}__\n\n- ${
+            poll.restrict
+                ? "This poll is **restricted** to voters only."
+                : "This poll is **open** to everyone."
+        }\n- ${
+            poll.quorum
+                ? `This poll **requires ${poll.quorum}% quorum** in order for the result to be valid.`
+                : "This poll does **not require quorum** in order to be valid."
+        }\n- ${
+            poll.hide
+                ? "This poll's results will be **hidden** until the poll closes and is valid."
+                : "This poll's results will be **shown** in real-time as people vote."
+        }\n- ${
+            poll.anonymous
+                ? "This poll's votes will be **anonymous**."
+                : "This poll's voters and their selections will be **visible** via clicking the 🗳️ button."
+        }\n- ${
+            poll.mandatory
+                ? "This poll is **mandatory** and voting will be tracked. Abstaining counts as voting."
+                : "This poll is **optional** and voting will not be tracked."
+        }`;
     }
 }

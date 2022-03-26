@@ -7,7 +7,7 @@ import loadDir from "./loadDir.js";
 client.on("ready", async () => {
     console.log("Creating commands...");
 
-    const guild = await client.guilds.fetch("927153548339343360");
+    const guild = await client.guilds.fetch(config.guild_id);
 
     for (const [, { command }] of await loadDir(
         path.join(process.cwd(), "src", "commands")

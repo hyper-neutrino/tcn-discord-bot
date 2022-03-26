@@ -1,51 +1,42 @@
-import db from "../db.js";
+import { db } from "../db.js";
 
-export async function add_permission(permission, snowflake) {
-    await db.query(
-        `insert into permissions values ($1, $2) on conflict (permission, snowflake) do nothing`,
-        [permission, snowflake]
-    );
-}
-
-export async function remove_permission(permission, snowflake) {
-    await db.query(
-        `delete from permissions where permission = $1 and snowflake = $2`,
-        [permission, snowflake]
-    );
-}
-
-export async function has_permission(permission, member) {
-    if (permission == "everyone") return true;
-    if (member.id == member.guild.ownerId) return true;
-    for (const id of [member.id, ...member.roles.cache.keys()]) {
-        if (
-            (
-                await db.query(
-                    `select count(*) from permissions where permission = $1 and snowflake = $2`,
-                    [permission, id]
-                )
-            ).rows[0].count > 0
-        ) {
-            return true;
-        }
+export async function has_permission(key, member) {
+    if (key == "@everyone") return true;
+    if (member.guild.ownerId == member.id) return true;
+    const entry = await db.permissions.findOne({ key });
+    if (!entry) return false;
+    if (!entry.snowflakes) return false;
+    const snowflakes = new Set(entry.snowflakes);
+    if (snowflakes.has(member.id)) return true;
+    for (const id of member.roles.cache) {
+        if (snowflakes.has(id)) return true;
     }
     return false;
 }
 
-export async function list_snowflakes_by_permission(permission) {
-    return (
-        await db.query(
-            `select snowflake from permissions where permission = $1`,
-            [permission]
-        )
-    ).rows.map((row) => row.snowflake);
+export async function grant_permission(key, snowflake) {
+    await db.permissions.findOneAndUpdate(
+        { key },
+        { $addToSet: { snowflakes: snowflake } },
+        { upsert: true }
+    );
 }
 
-export async function list_permissions_by_snowflake(snowflake) {
-    return (
-        await db.query(
-            `select permission from permissions where snowflake = $1`,
-            [snowflake]
-        )
-    ).rows.map((row) => row.permission);
+export async function deny_permission(key, snowflake) {
+    await db.permissions.findOneAndUpdate(
+        { key },
+        { $pull: { snowflakes: snowflake } }
+    );
+}
+
+export async function reset_permission(key) {
+    await db.permissions.findOneAndUpdate(
+        { key },
+        { $set: { snowflakes: [] } }
+    );
+}
+
+export async function get_permissions(key) {
+    const entry = await db.permissions.findOne({ key });
+    return (entry && entry.snowflakes) || [];
 }

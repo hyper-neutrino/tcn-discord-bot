@@ -1,5 +1,5 @@
-import pg from "pg";
-
+import { MongoClient } from "mongodb";
 import config from "./config.js";
 
-export default new pg.Client(config.database_options);
+export const db_client = new MongoClient(config.mongo_uri);
+export const db = db_client.db();

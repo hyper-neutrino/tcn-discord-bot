@@ -5,7 +5,7 @@ import client from "./client.js";
 import { handle, transform } from "./interactionutils.js";
 import loadDir from "./loadDir.js";
 import { has_permission } from "./db/permissions.js";
-import db from "./db.js";
+import { db, db_client } from "./db.js";
 
 process.on("uncaughtException", (error) => {
     console.error("UNEXPECTED UNCAUGHT EXCEPTION");
@@ -39,7 +39,12 @@ for (const [file, { handle }] of await loadDir(
 }
 
 client.on("ready", async () => {
-    await db.connect();
+    await db_client.connect();
+
+    for (const collection of await db.collections()) {
+        db[collection.collectionName] = collection;
+    }
+
     client.home = await client.guilds.fetch(config.guild_id);
 
     console.log("TCN Paimon is ready.");
@@ -80,9 +85,11 @@ client.on("interactionCreate", async (interaction) => {
         ) {
             if (autocompletes.has(interaction.commandName)) {
                 await interaction.respond(
-                    await autocompletes.get(interaction.commandName)(
-                        interaction
-                    )
+                    (
+                        await autocompletes.get(interaction.commandName)(
+                            interaction
+                        )
+                    ).map((option) => ({ name: option, value: option }))
                 );
             }
         }

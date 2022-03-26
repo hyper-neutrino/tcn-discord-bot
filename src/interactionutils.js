@@ -44,7 +44,22 @@ export async function transform(interaction) {
 
 export async function handle(interaction, handler) {
     try {
-        const response = await handler(interaction);
+        const options = {};
+        if (interaction.isCommand()) {
+            try {
+                options.sub = interaction.options.getSubcommand();
+            } catch {}
+            try {
+                options.subgroup = interaction.options.getSubcommandGroup();
+            } catch {}
+            for (const { name, type } of interaction.options._hoistedOptions) {
+                options[name] =
+                    interaction.options[
+                        `get${type.charAt(0)}${type.substring(1).toLowerCase()}`
+                    ](name);
+            }
+        }
+        const response = await handler(interaction, options);
         if (response) throw response;
     } catch (error) {
         if (is_string(error)) {
