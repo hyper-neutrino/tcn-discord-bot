@@ -1,3 +1,4 @@
+import { db } from "../db.js";
 import {
     create_poll,
     get_poll,
@@ -100,6 +101,12 @@ export const command = {
         {
             name: "close",
             description: "Close a poll immediately.",
+            type: "SUB_COMMAND",
+            options: [{ ...id, autocomplete: true }],
+        },
+        {
+            name: "delete",
+            description: "Delete a poll.",
             type: "SUB_COMMAND",
             options: [{ ...id, autocomplete: true }],
         },
@@ -208,6 +215,11 @@ export async function execute(
         if (poll.closed) return "This poll is already closed.";
         close_poll(poll);
         return double(`Manually closed poll \`${id}\`.`);
+    } else if (sub == "poll") {
+        const poll = await get_poll(id);
+        if (!poll) return "There is no poll by that ID.";
+        await db.polls.findOneAndUpdate({ id });
+        return double(`Delete poll \`${id}\`.`);
     }
 }
 
