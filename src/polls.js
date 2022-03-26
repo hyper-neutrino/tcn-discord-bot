@@ -312,7 +312,7 @@ export async function close_poll(poll) {
             if (poll.mandatory) {
                 print();
                 print("# Missing Votes (Mandatory Poll)");
-                for (const user of permitted) {
+                for (const user of poll.missing) {
                     print(`- ${user.tag} \`${user.id}\``);
                 }
             }
