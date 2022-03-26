@@ -7,6 +7,7 @@ import {
     set_poll_valid,
 } from "./db/polls.js";
 import { get_setting } from "./db/settings.js";
+import { timestamp } from "./format.js";
 import { create_gist } from "./gist.js";
 import { alphabet_emojis } from "./utils.js";
 
@@ -56,7 +57,15 @@ export async function show_poll(poll) {
         title: `[ **${poll.id}** ]`,
         color: await get_setting("embed-color"),
         description: `**${poll.question}**`,
-        fields: [],
+        fields: [
+            {
+                name: "Deadline",
+                description: `${timestamp(poll.time)} (${timestamp(
+                    poll.time,
+                    "R"
+                )})`,
+            },
+        ],
         footer: {
             text: [
                 poll.restrict ? "voter only" : "open to all",
