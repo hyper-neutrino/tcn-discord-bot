@@ -1,5 +1,6 @@
 import { is_council, is_voter } from "../api.js";
 import { get_poll, get_poll_vote, set_poll_vote } from "../db/polls.js";
+import { tag_user } from "../format.js";
 import { post_modal } from "../modals.js";
 import { close_poll, update_poll } from "../polls.js";
 
@@ -139,7 +140,7 @@ async function handle_poll(interaction, id, sub) {
             Object.keys(poll.votes || {})
                 .map(
                     (key) =>
-                        `<@${key}>: \`${
+                        `<@${key}> (${await tag_user(key)}): \`${
                             poll.votes[key] == -1
                                 ? "ABSTAINED"
                                 : [poll.votes[key]].flat().join(" > ")
