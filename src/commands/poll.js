@@ -218,7 +218,7 @@ export async function execute(
     } else if (sub == "delete") {
         const poll = await get_poll(id);
         if (!poll) return "There is no poll by that ID.";
-        await db.polls.findOneAndUpdate({ id });
+        await db.polls.findOneAndDelete({ id });
         return double(`Delete poll \`${id}\`.`);
     }
 }
