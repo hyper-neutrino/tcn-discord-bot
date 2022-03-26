@@ -60,10 +60,7 @@ export async function show_poll(poll) {
         fields: [
             {
                 name: "Deadline",
-                description: `${timestamp(poll.time)} (${timestamp(
-                    poll.time,
-                    "R"
-                )})`,
+                value: `${timestamp(poll.time)} (${timestamp(poll.time, "R")})`,
             },
         ],
         footer: {
