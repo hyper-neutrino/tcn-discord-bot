@@ -215,7 +215,7 @@ export async function execute(
         if (poll.closed) return "This poll is already closed.";
         close_poll(poll);
         return double(`Manually closed poll \`${id}\`.`);
-    } else if (sub == "poll") {
+    } else if (sub == "delete") {
         const poll = await get_poll(id);
         if (!poll) return "There is no poll by that ID.";
         await db.polls.findOneAndUpdate({ id });
