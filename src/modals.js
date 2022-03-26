@@ -4,8 +4,8 @@ const resolvers = new Map();
 const rejecters = new Map();
 
 function random_id() {
-    var id = "";
-    for (var x = 0; x < 100; ++x) {
+    let id = "";
+    for (let x = 0; x < 100; ++x) {
         id += String.fromCharCode(97 + Math.floor(Math.random() * 26));
     }
     return id;

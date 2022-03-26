@@ -17,7 +17,7 @@ const to_log = new Set();
 const commands = new Map();
 const autocompletes = new Map();
 const permissions = new Map();
-var interaction_listener;
+let interaction_listener;
 
 for (const [, { command, execute, autocomplete }] of await loadDir(
     path.join(process.cwd(), "src", "commands")

@@ -1,3 +1,4 @@
+import { get_council, get_voters } from "./api.js";
 import client from "./client.js";
 import {
     get_poll,
@@ -5,13 +6,13 @@ import {
     set_poll_closed,
     set_poll_valid,
 } from "./db/polls.js";
-import { get_setting, get_setting_role } from "./db/settings.js";
+import { get_setting } from "./db/settings.js";
 import { create_gist } from "./gist.js";
 import { alphabet_emojis } from "./utils.js";
 
 function tally(poll, ballots) {
     if (poll.type == "proposal") {
-        var yes = 0,
+        let yes = 0,
             no = 0;
         for (const ballot of ballots) {
             if (ballot == "yes") ++yes;
@@ -21,7 +22,7 @@ function tally(poll, ballots) {
     } else if (poll.type == "select") {
         const keys = poll.options;
         const score = {};
-        var total = 0;
+        let total = 0;
         for (const key of keys) score[key] = 0;
         for (const ballot of ballots) {
             ++score[ballot];
@@ -35,7 +36,7 @@ function tally(poll, ballots) {
     } else if (poll.type == "ranked") {
         const keys = poll.options;
         const score = {};
-        var total = 0;
+        let total = 0;
         for (const key of keys) score[key] = 0;
         for (const ballot of ballots) {
             if (ballot == -1) continue;
@@ -69,12 +70,12 @@ export async function show_poll(poll) {
         },
     };
     if (!poll.hide || poll.closed) {
-        var value = "...";
+        let value = "...";
         if (poll.hide && !poll.valid) {
             value = `This poll failed to reach quorum and its votes are hidden, so the results will not be disclosed.${
                 poll.mandatory && poll.missing
-                    ? ` Missing voters: ${[...poll.missing]
-                          .map(([id, member]) => `${member.user.tag} \`${id}\``)
+                    ? ` Missing voters: ${poll.missing
+                          .map((user) => `${user.tag} \`${user.id}\``)
                           .join(", ")}`
                     : ""
             }`;
@@ -82,7 +83,7 @@ export async function show_poll(poll) {
             const ballots = Object.keys(poll.votes || {}).map(
                 (key) => poll.votes[key]
             );
-            var abstain = 0;
+            let abstain = 0;
             for (const ballot of ballots) if (ballot == -1) ++abstain;
             if (poll.type == "proposal") {
                 const { yes, no } = tally(poll, ballots);
@@ -226,56 +227,37 @@ export async function close_poll(poll) {
     await set_poll_closed(poll.id);
     poll.closed = true;
     const ballots = [];
-    var index = 0;
-    const voter = await get_setting_role("voter");
+    let index = 0;
+    const allowed = poll.restrict ? await get_voters() : await get_council();
+    const voted = new Set();
     for (const key of Object.keys(poll.votes || {})) {
         try {
-            const member = await client.home.members.fetch(key);
-            if (!poll.restrict || (voter && member.roles.cache.has(voter.id))) {
+            const user = await client.users.fetch(key);
+            if (allowed.has(key)) {
                 ballots.push({
-                    name: poll.anonymous
-                        ? `ANON VOTER #${++index}`
-                        : member.user.tag,
-                    vote: poll.votes[key],
+                    name: poll.anonymous ? `ANON VOTER #${++index}` : user.tag,
                 });
+                voted.add(key);
             }
         } catch (error) {
             console.error(error);
         }
     }
-    var valid = false;
-    const permitted = new Map();
-    if (poll.quorum) {
-        if (poll.restrict) {
-            if (voter) {
-                for (const member of voter.members.values()) {
-                    permitted.set(member.id, member);
-                }
-            }
-        } else {
-            client.home.members.cache
-                .toJSON()
-                .filter((x) => !x.user.bot)
-                .forEach((x) => permitted.set(x.id, x));
-        }
-        if (ballots.length * 100 >= permitted.size * poll.quorum) {
-            valid = true;
-        }
-    } else {
-        valid = true;
-    }
+    const valid = ballots.length * 100 >= allowed.size * poll.quorum;
     if (poll.mandatory) {
-        for (const key of Object.keys(poll.votes || {})) {
-            permitted.delete(key);
+        poll.missing = [];
+        for (const key of allowed) {
+            if (voted.has(key)) continue;
+            try {
+                poll.missing.push(await client.users.fetch(key));
+            } catch {}
         }
-        poll.missing = permitted;
     }
-    await set_poll_valid(poll.id, valid);
-    poll.valid = valid;
+    await set_poll_valid(poll.id, (poll.valid = valid));
     const message = await get_poll_message(poll);
     if (summarize) {
         if (valid) {
-            var text = "";
+            let text = "";
             const print = (line) => (text += (line || "") + "  \n");
             print("# Ballots");
             print();
@@ -324,8 +306,8 @@ export async function close_poll(poll) {
             if (poll.mandatory) {
                 print();
                 print("# Missing Votes (Mandatory Poll)");
-                for (const [id, member] of permitted) {
-                    print(`- ${member.user.tag} \`${id}\``);
+                for (const user of permitted) {
+                    print(`- ${user.tag} \`${user.id}\``);
                 }
             }
             const url = await create_gist(
@@ -345,7 +327,7 @@ export async function close_poll(poll) {
                                 ? [
                                       {
                                           name: "Mandatory Poll: Results",
-                                          value: `Missing voters: ${permitted.size}`,
+                                          value: `Missing voters: ${poll.missing.length}`,
                                       },
                                   ]
                                 : [],
@@ -356,10 +338,8 @@ export async function close_poll(poll) {
         } else if (poll.mandatory) {
             if (message) {
                 await message.reply({
-                    content: `The following users failed to vote: ${[
-                        ...permitted,
-                    ]
-                        .map(([id, member]) => `${member} (${member.user.tag})`)
+                    content: `The following users failed to vote: ${poll.missing
+                        .map((user) => `${user} (${user.tag})`)
                         .join(", ")}`,
                     allowedMentions: { parse: [] },
                 });
@@ -369,12 +349,6 @@ export async function close_poll(poll) {
     if (message) {
         await message.edit(await show_poll(poll));
     }
-}
-
-export async function is_voter(member) {
-    const role = await get_setting_role("voter");
-    if (!role) return false;
-    return member.roles.cache.has(role.id);
 }
 
 setInterval(async () => {

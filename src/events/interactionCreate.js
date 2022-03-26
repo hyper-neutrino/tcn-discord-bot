@@ -1,6 +1,7 @@
+import { is_council, is_voter } from "../api.js";
 import { get_poll, get_poll_vote, set_poll_vote } from "../db/polls.js";
 import { post_modal } from "../modals.js";
-import { close_poll, is_voter, update_poll } from "../polls.js";
+import { close_poll, update_poll } from "../polls.js";
 
 export async function handle(interaction) {
     const user_id = interaction.user.id;
@@ -28,10 +29,18 @@ async function handle_poll(interaction, id, sub) {
     const poll = await get_poll(id);
     if (!poll) return "This poll appears not to exist anymore.";
     if (
-        (sub == "vote-yes" || sub == "vote-no" || sub == "abstain") &&
-        !(await is_voter(interaction.member))
+        (sub == "vote-yes" ||
+            sub == "vote-no" ||
+            sub == "vote" ||
+            sub == "rank" ||
+            sub == "abstain") &&
+        !(poll.restrict
+            ? await is_voter(interaction.user.id)
+            : await is_council(interaction.user.id))
     ) {
-        return "This poll is restricted to voters.";
+        return `This poll is restricted to ${
+            poll.restrict ? "voters" : "council members"
+        }.`;
     }
     const user_id = interaction.user.id;
     if (sub == "vote-yes") {
@@ -152,7 +161,7 @@ async function handle_poll(interaction, id, sub) {
         }\n\n__${poll.question}__\n\n- ${
             poll.restrict
                 ? "This poll is **restricted** to voters only."
-                : "This poll is **open** to everyone."
+                : "This poll is **open** to all council members."
         }\n- ${
             poll.quorum
                 ? `This poll **requires ${poll.quorum}% quorum** in order for the result to be valid.`

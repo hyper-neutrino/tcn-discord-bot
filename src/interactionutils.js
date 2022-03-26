@@ -15,7 +15,7 @@ export async function transform(interaction) {
         console.log(
             `[CMD] ${interaction.user.tag} (${interaction.user.id}): /${interaction.commandName} - ${message}`
         );
-        var reply;
+        let reply;
         try {
             reply = await interaction.fetchReply();
         } catch {}
