@@ -242,6 +242,7 @@ export async function close_poll(poll) {
             if (allowed.has(key)) {
                 ballots.push({
                     name: poll.anonymous ? `ANON VOTER #${++index}` : user.tag,
+                    vote: poll.votes[key],
                 });
                 voted.add(key);
             }
