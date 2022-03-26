@@ -137,16 +137,16 @@ async function handle_poll(interaction, id, sub) {
         }
     } else if (sub == "votes") {
         return (
-            Object.keys(poll.votes || {})
-                .map(
-                    (key) =>
+            (await Promise.all(
+                Object.keys(poll.votes || {}).map(
+                    async (key) =>
                         `<@${key}> (${await tag_user(key)}): \`${
                             poll.votes[key] == -1
                                 ? "ABSTAINED"
                                 : [poll.votes[key]].flat().join(" > ")
                         }\``
                 )
-                .join("\n") || "(nobody has voted yet)"
+            ).join("\n")) || "(nobody has voted yet)"
         );
     } else if (sub == "abstain") {
         await set_poll_vote(id, user_id, -1);
