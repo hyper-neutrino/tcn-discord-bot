@@ -24,7 +24,7 @@ export async function transform(interaction) {
                 {
                     title: `Command Executed: ${interaction.commandName}`,
                     description: message,
-                    color: (await get_setting("color-default")) || "d9e9f9",
+                    color: (await get_setting("embed-color")) || "d9e9f9",
                     fields: [
                         {
                             name: "Executor",

@@ -207,7 +207,7 @@ export async function execute(
         return double(
             `Posted poll \`${id}\` in ${expand(
                 interaction.channel
-            )} closing ${timestamp(time)}`
+            )} closing ${timestamp(poll.time)}`
         );
     } else if (sub == "close") {
         const poll = await get_poll(id);
