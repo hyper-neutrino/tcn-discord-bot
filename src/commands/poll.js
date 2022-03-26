@@ -198,11 +198,11 @@ export async function execute(
         if (!poll) return "There is no poll by that ID.";
         if (await get_poll_message(poll)) return "This poll is already posted.";
         poll.closed = false;
-        const message = await interaction.channel.send(await show_poll(poll));
         const time = new Date();
         time.setSeconds(time.getSeconds() + duration * 3600);
-        await set_poll_message(id, message);
         await set_poll_deadline(id, time);
+        const message = await interaction.channel.send(await show_poll(poll));
+        await set_poll_message(id, message);
         await set_poll_open(id);
         return double(
             `Posted poll \`${id}\` in ${expand(
