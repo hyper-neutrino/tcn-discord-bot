@@ -142,6 +142,7 @@ async function handle_poll(interaction, id, sub) {
             if (!options.has(key)) options.set(key, []);
             options.get(key).push(await tag_user(key));
         }
+        console.log(options);
         return (
             [...options]
                 .map(([key, tags]) => `\`${key}\`\n${tags.join(", ")}`)
