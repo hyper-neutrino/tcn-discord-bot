@@ -137,14 +137,31 @@ async function handle_poll(interaction, id, sub) {
         }
     } else if (sub == "votes") {
         const options = new Map();
+        if (poll.type == "proposal") {
+            options.set("yes", []);
+            options.set("no", []);
+        } else if (poll.type == "select") {
+            for (const option of poll.options) {
+                options.set(option, []);
+            }
+        }
+        const abstainees = [];
         for (const id of Object.keys(poll.votes || {})) {
-            const key = [poll.votes[id]].flat().join(" > ");
-            if (!options.has(key)) options.set(key, []);
-            options.get(key).push(await tag_user(id));
+            const vote = poll.votes[id];
+            if (vote == -1) {
+                abstainees.push(await tag_user(id));
+            } else {
+                const key = [vote].flat().join(" > ");
+                if (!options.has(key)) options.set(key, []);
+                options.get(key).push(await tag_user(id));
+            }
         }
         return (
-            [...options]
-                .map(([key, tags]) => `\`${key}\`\n${tags.join(", ")}`)
+            [...options, ["abstain", abstainees]]
+                .map(
+                    ([key, tags]) =>
+                        `\`${key}\`\n${tags.join(", ") || "(none)"}`
+                )
                 .join("\n\n") || "Nobody has voted yet."
         );
     } else if (sub == "abstain") {
