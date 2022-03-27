@@ -136,19 +136,16 @@ async function handle_poll(interaction, id, sub) {
             return `Your vote is currently \`${[vote].flat().join(" > ")}\`.`;
         }
     } else if (sub == "votes") {
+        const options = new Map();
+        for (const id of Object.keys(poll.votes || {})) {
+            const key = [poll.votes[id]].flat().join(" > ");
+            if (!options.has(key)) options.set(key, []);
+            options.get(key).push(await tag_user(key));
+        }
         return (
-            (
-                await Promise.all(
-                    Object.keys(poll.votes || {}).map(
-                        async (key) =>
-                            `<@${key}> (${await tag_user(key)}): \`${
-                                poll.votes[key] == -1
-                                    ? "ABSTAINED"
-                                    : [poll.votes[key]].flat().join(" > ")
-                            }\``
-                    )
-                )
-            ).join("\n") || "(nobody has voted yet)"
+            [...options]
+                .map(([key, tags]) => `\`${key}\`\n${tags.join(", ")}`)
+                .join("\n\n") || "Nobody has voted yet."
         );
     } else if (sub == "abstain") {
         await set_poll_vote(id, user_id, -1);
