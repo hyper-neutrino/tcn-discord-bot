@@ -140,9 +140,8 @@ async function handle_poll(interaction, id, sub) {
         for (const id of Object.keys(poll.votes || {})) {
             const key = [poll.votes[id]].flat().join(" > ");
             if (!options.has(key)) options.set(key, []);
-            options.get(key).push(await tag_user(key));
+            options.get(key).push(await tag_user(id));
         }
-        console.log(options);
         return (
             [...options]
                 .map(([key, tags]) => `\`${key}\`\n${tags.join(", ")}`)
