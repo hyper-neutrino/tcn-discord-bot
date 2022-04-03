@@ -27,7 +27,7 @@ function tally(poll, ballots) {
         for (const key of keys) score[key] = 0;
         for (const ballot of ballots) {
             ++score[ballot];
-            ++total;
+            if (ballot != -1) ++total;
         }
         keys.sort((a, b) => score[b] - score[a]);
         return {
@@ -299,7 +299,7 @@ export async function close_poll(poll) {
                     print(
                         `${key}: ${score}${
                             poll.type == "select"
-                                ? ` = ${(score / total) * 100}%`
+                                ? ` = ${((score / total) * 100).toFixed(2)}%`
                                 : ""
                         }`
                     );
