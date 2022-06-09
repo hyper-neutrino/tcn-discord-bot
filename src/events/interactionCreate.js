@@ -111,7 +111,7 @@ async function handle_poll(interaction, id, sub) {
                 } else if (rank >= poll.options.length) {
                     throw `Error: ${value} is out of range (1..${poll.options.length})`;
                 } else if (values[rank]) {
-                    throw `Error: You ranked two objects #${value}.`;
+                    throw `Error: You ranked two choices #${value}.`;
                 } else if (taken.has(key)) {
                     throw `Error: You ranked \`${key}\` twice.`;
                 } else {
