@@ -78,13 +78,7 @@ export async function show_poll(poll) {
     if (!poll.hide || poll.closed) {
         let value = "...";
         if (poll.hide && !poll.valid) {
-            value = `This poll failed to reach quorum and its votes are hidden, so the results will not be disclosed.${
-                poll.mandatory && poll.missing
-                    ? ` Missing voters: ${poll.missing
-                          .map((user) => `${user.tag} \`${user.id}\``)
-                          .join(", ")}`
-                    : ""
-            }`;
+            value = `This poll failed to reach quorum and its votes are hidden, so the results will not be disclosed.`;
         } else {
             const ballots = Object.keys(poll.votes || {}).map(
                 (key) => poll.votes[key]
