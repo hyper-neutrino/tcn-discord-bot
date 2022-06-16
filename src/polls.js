@@ -336,15 +336,6 @@ export async function close_poll(poll) {
                     ],
                 });
             }
-        } else if (poll.mandatory) {
-            if (message) {
-                await message.reply({
-                    content: `The following users failed to vote: ${poll.missing
-                        .map((user) => `${user} (${user.tag})`)
-                        .join(", ")}`,
-                    allowedMentions: { parse: [] },
-                });
-            }
         }
     }
     if (message) {
