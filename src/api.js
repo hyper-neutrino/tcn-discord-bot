@@ -14,9 +14,15 @@ export async function is_voter(user_id) {
 }
 
 export async function get_council() {
-    const response = await fetch(API + `/users`);
+    const response = await fetch(API + `/guilds`);
     const data = await response.json();
-    return new Set(Object.keys(data));
+    const ids = new Set();
+    for (const key in data) {
+        for (const k of ["owner", "advisor"]) {
+            if (data[key][k]) ids.add(data[key][k]);
+        }
+    }
+    return ids;
 }
 
 export async function get_voters() {
