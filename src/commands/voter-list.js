@@ -33,7 +33,10 @@ export async function execute(interaction, { id }) {
     await interaction.reply({
         files: [
             {
-                attachment: Buffer.from(output.join("\n")),
+                attachment: Buffer.from(
+                    `Quorum: ${(voted.size / eligible.size) * 100}%\n\n` +
+                        output.join("\n")
+                ),
                 name: "voters.txt",
             },
         ],
