@@ -1,5 +1,5 @@
 import { get_council, get_voters } from "../api.js";
-import { get_poll } from "../db/polls.js";
+import { get_poll, get_polls } from "../db/polls.js";
 
 export const command = {
     name: "voter-list",
